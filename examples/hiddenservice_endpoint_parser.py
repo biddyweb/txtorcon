@@ -24,8 +24,14 @@ class LaunchTorEndpoint(object):
         self.reactor = reactor
         self.config = config
         self.public_port = public_port
-        self.local_port = local_port
-        self.hs_dir = hs_dir
+
+        if local_port is not None:
+            self.endpoint = txtorcon.TCPHiddenServiceEndpoint(self.reactor, self.config,
+                                                              self.public_port, data_dir=hs_dir,
+                                                              port_generator=lambda: local_port)
+        else:
+            self.endpoint = txtorcon.TCPHiddenServiceEndpoint(self.reactor, self.config,
+                                                              self.public_port, data_dir=hs_dir)
 
     def progress(self, percent, tag, message):
         pass
@@ -34,19 +40,9 @@ class LaunchTorEndpoint(object):
     def listen(self, protocol_factory):
         """IStreamServerEndpoint API"""
         tor_process = yield txtorcon.launch_tor(self.config, self.reactor, progress_updates=self.progress)
-        if self.local_port is not None:
-            endpoint = txtorcon.TCPHiddenServiceEndpoint(self.reactor, self.config,
-                                                         self.public_port, data_dir=self.hs_dir,
-                                                         port_generator=lambda: self.local_port)
-        else:
-            endpoint = txtorcon.TCPHiddenServiceEndpoint(self.reactor, self.config,
-                                                         self.public_port, data_dir=self.hs_dir)
-        # could "yield config.post_bootstrap" but underlying endpoint
-        # listen() is aware too
-        port = yield endpoint.listen(protocol_factory)
+        port = yield self.endpoint.listen(protocol_factory)
         port.onion_port = self.public_port
         defer.returnValue(port)
-        return
 
 
 @implementer(IPlugin, IStreamServerEndpointStringParser)
