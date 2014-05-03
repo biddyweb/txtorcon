@@ -3,43 +3,69 @@
 from zope.interface import implementer
 from twisted.plugin import IPlugin
 from twisted.internet.protocol import Protocol, Factory
-from twisted.internet import reactor
-from twisted.internet.interfaces import IStreamServerEndpointStringParser
+from twisted.internet import reactor, defer
+from twisted.internet.interfaces import IStreamServerEndpointStringParser, IStreamServerEndpoint
 from twisted.internet.endpoints import serverFromString
 from twisted.internet.endpoints import TCP4ServerEndpoint
 
 import txtorcon
 
 
+@implementer(IStreamServerEndpoint)
+class LaunchTorEndpoint(object):
+    """
+    Wants a better name...
+    Launches tor then uses underlying TCPHiddenServiceEndpoint to
+    create a hidden service. Ultimately the user getting back an IPort
+    with .onion and .private_key attributes added.
+    """
+
+    def __init__(self, reactor, config, public_port, hs_dir=None, local_port=None):
+        self.reactor = reactor
+        self.config = config
+        self.public_port = public_port
+        self.local_port = local_port
+        self.hs_dir = hs_dir
+
+    def progress(self, percent, tag, message):
+        pass
+
+    @defer.inlineCallbacks
+    def listen(self, protocol_factory):
+        """IStreamServerEndpoint API"""
+        tor_process = yield txtorcon.launch_tor(self.config, self.reactor, progress_updates=self.progress)
+        if self.local_port is not None:
+            endpoint = txtorcon.TCPHiddenServiceEndpoint(self.reactor, self.config,
+                                                         self.public_port, data_dir=self.hs_dir,
+                                                         port_generator=lambda: self.local_port)
+        else:
+            endpoint = txtorcon.TCPHiddenServiceEndpoint(self.reactor, self.config,
+                                                         self.public_port, data_dir=self.hs_dir)
+        # could "yield config.post_bootstrap" but underlying endpoint
+        # listen() is aware too
+        port = yield endpoint.listen(protocol_factory)
+        port.onion_port = self.public_port
+        defer.returnValue(port)
+        return
+
+
 @implementer(IPlugin, IStreamServerEndpointStringParser)
 class TorHiddenServiceEndpointStringParser(object):
     prefix = "onion"
 
-    def setup_hidden_service(self, tor_process_protocol):
-        config      = txtorcon.TorConfig(tor_process_protocol.tor_protocol)
-        hs_endpoint = txtorcon.TCPHiddenServiceEndpoint(reactor, config, self.publicPort)
-        return hs_endpoint
-
-    def updates(self, prog, tag, summary):
-        print "%d%%: %s" % (prog, summary)
-
-    def _parseServer(self, reactor, socksPort=None, controlPort=None, publicPort=None):
+    def _parseServer(self, reactor, controlPort=None, publicPort=None, hiddenServiceDir=None, localPort=None):
         assert publicPort is not None
-        assert (socksPort and controlPort) is not None
 
-        self.publicPort    = int(publicPort)
+        publicPort = int(publicPort)
 
-        config             = txtorcon.TorConfig()
-        config.socksPort   = int(socksPort)
-        config.ControlPort = int(controlPort)
+        config = txtorcon.TorConfig()
+        config.socksPort = 0                                        # no SOCKS listener
+        if controlPort is not None:                                 # ...or let txtorcon pick
+            config.ControlPort = int(controlPort)
+        if localPort is not None:
+            localPort = int(localPort)
 
-        # optional progress output
-        #progress_updates   = self.updates
-        progress_updates   = None
-
-        d = txtorcon.launch_tor(config, reactor, progress_updates=progress_updates, timeout=60)
-        d.addCallback(self.setup_hidden_service)
-        return d
+        return LaunchTorEndpoint(reactor, config, publicPort, hiddenServiceDir, localPort)
 
     def parseStreamServer(self, reactor, *args, **kwargs):
         return self._parseServer(reactor, *args, **kwargs)

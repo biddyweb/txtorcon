@@ -7,6 +7,7 @@
 ## into a TCPHiddenServiceEndpoint object...
 ##
 
+import shutil
 
 from twisted.internet import reactor
 from twisted.web import server, resource
@@ -23,28 +24,30 @@ class Simple(resource.Resource):
 
 site = server.Site(Simple())
 
-
 def setup_failed(arg):
     print "SETUP FAILED", arg
 
 def setup_complete(port):
-    print "I have set up a hidden service, advertised at:"
-    print "http://%s:%d" % (port.onion_uri, port.onion_port)
+    print "I have set up a hidden service."
+    if True:
+        print port.onion_private_key
+    if False:
+        print "ephemeral service; nuking data", port.onion_data
+        shutil.rmtree(port.onion_data)
+    print "public at http://%s:%d" % (port.onion_uri, port.onion_port)
     print "locally listening on", port.getHost()
 
-def received_endpoint(endpoint):
-    print "endpoint %s" % (endpoint,)
-    if endpoint is None:
-        return
-    else:
-        endpoint.listen(site).addCallback(setup_complete).addErrback(setup_failed)
+def progress(percent, tag, message):
+    bar = int(percent / 10)
+    print '[%s%s] %s' % ('#' * bar, '.' * (10 - bar), message)
 
+hs_endpoint = serverFromString(reactor, "onion:publicPort=80")
+#hs_endpoint = serverFromString(reactor, "onion:controlPort=9089:localPort=8080:publicPort=80:hiddenServiceDir=/home/mike/src/txtorcon/hidserv")
 
+## FIXME hmmm....?
+hs_endpoint.progress = progress
 
-# set a couple options to avoid conflict with the defaults if a Tor is
-# already running
-hs_endpoint_deferred = serverFromString(reactor, "onion:socksPort=0:controlPort=9089:publicPort=80")
-hs_endpoint_deferred.addCallback(received_endpoint)
-hs_endpoint_deferred.addErrback(setup_failed)
+d = hs_endpoint.listen(site)
+d.addCallbacks(setup_complete, setup_failed)
 
 reactor.run()
