@@ -56,8 +56,18 @@ class TorHiddenServiceEndpointStringParser(object):
 
         config = txtorcon.TorConfig()
         config.socksPort = 0                                        # no SOCKS listener
+        ## FIXME TODO THINK
+        ## maybe setting controlPort should mean "I've already got a
+        ## Tor running, and wish you to please connect to that"
+        ## whereas NOT specifying it means "please launch a new Tor
+        ## instance"?
         if controlPort is not None:                                 # ...or let txtorcon pick
             config.ControlPort = int(controlPort)
+
+        ## specify which local port to listen on. in the future, Tor
+        ## will support having hidden services listen on unix sockets,
+        ## too, so then it would make sense to allow a pathname here
+        ## too, probably (e.g. if int(localPort) fails, try path)
         if localPort is not None:
             localPort = int(localPort)
 
