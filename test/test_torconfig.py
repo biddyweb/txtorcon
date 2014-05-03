@@ -1221,6 +1221,12 @@ HiddenServiceOptions Virtual''')
         self.config.bootstrap()
         return d
 
+    def test_explicit_port_generator(self):
+        ## FIXME TODO write a test that passes in "lambda: 1234" or
+        ## something for the port-generator and confirm it really
+        ## listens (or tries at least one) on that port; see
+        ## d2711a4f8bccd45265f0897fb5adfd107a032894
+
     def check_error(self, failure):
         self.assertEqual(failure.type, error.CannotListenError)
         return None
