@@ -150,16 +150,14 @@ class TCPHiddenServiceEndpoint(object):
         running Tor (via the `config` member).
         """
 
-        ## FIXME this should be anything that doesn't currently have a
-        ## listener, and we should check that....or keep trying random
-        ## ports if the "real" listen fails?
-        self.listen_port = 80
-
+        self.listen_port = self.port_generator()
         self.hiddenservice = HiddenService(self.config, self.data_dir,
                                            ['%d 127.0.0.1:%d' % (self.public_port,
                                                                  self.listen_port)])
         self.config.HiddenServices.append(self.hiddenservice)
-        return arg
+        d = self.config.save()
+        d.addCallback(lambda x: arg)
+        return d
 
     def listen(self, protocolfactory):
         """
@@ -237,8 +235,6 @@ class TCPHiddenServiceEndpoint(object):
         against it (adds `onion_uri` and `onion_private_key` members).
         """
 
-        self._update_onion(self.hiddenservice.dir)
-
         self.tcp_endpoint = self.endpoint_generator(self.reactor, self.listen_port)
         if not self.check_local_endpoint(self.tcp_endpoint):
             raise RuntimeError("Endpoint doesn't appear to be a local interface.")
@@ -247,8 +243,12 @@ class TCPHiddenServiceEndpoint(object):
         return d
 
     def _add_attributes(self, port):
+        if self.onion_uri is None or self.onion_private_key is None:
+            self._update_onion(self.hiddenservice.dir)
         port.onion_uri = self.onion_uri
+        port.onion_private_key = self.onion_private_key
         port.onion_port = self.public_port
+        port.onion_data = self.data_dir
         return port
 
 
